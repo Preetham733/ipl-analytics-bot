@@ -164,8 +164,6 @@ DATASET SUMMARY:
 TEAM ALL TIME WIN COUNT:
 {team_wins_str}
 
-TEAM RUNS PER SEASON:
-{team_season_runs_str}
 
 MOST WINS PER SEASON:
 {season_winners_str}
