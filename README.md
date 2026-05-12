@@ -3,7 +3,7 @@
 An interactive cricket analytics dashboard powered by AI.
 
 ## 🔗 Live Demo
-[Click here to view the app](https://your-app-link.streamlit.app)
+[Click here to view the app](https://ipl-analytics-bot-wafu5zbvtnz59uhleccgjk.streamlit.app)
 
 ## ✨ Features
 - 📊 Team Stats — Season wise wins, top scorers, wicket takers
