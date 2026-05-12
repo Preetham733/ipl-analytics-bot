@@ -3,6 +3,7 @@ from groq import Groq
 import os
 import pandas as pd
 from dotenv import load_dotenv
+from thefuzz import process
 from utils.data_loader import load_data
 
 load_dotenv()
@@ -54,37 +55,36 @@ season_winners_str = "\n".join([
     for _, row in season_winners.iterrows()
 ])
 
-# ── Smart player finder ──
-from thefuzz import process
-
+# ── Player finder ──
 def find_player_in_query(query, all_players):
-    # First try exact match
     query_lower = query.lower()
+
+    # Exact match
     for player in all_players:
         if player.lower() in query_lower:
             return player
 
-    # Try partial match word by word
+    # Partial word match
     for player in all_players:
         parts = player.lower().split()
         for part in parts:
             if len(part) > 3 and part in query_lower:
                 return player
 
-    # Try fuzzy match on each word in quer
+    # Fuzzy match
     words = query_lower.split()
     for word in words:
         if len(word) > 4:
             match, score = process.extractOne(word, [p.lower() for p in all_players])
             if score > 75:
-                # Return original case player name
                 idx = [p.lower() for p in all_players].index(match)
                 return all_players[idx]
 
     return None
 
+# ── Player stats ──
 def get_player_context(player_name):
-    # Batting stats
+    # Batting
     bat_df = df[df["batter"] == player_name]
     total_runs = bat_df["runs_batter"].sum()
     matches = bat_df["match_id"].nunique()
@@ -94,11 +94,22 @@ def get_player_context(player_name):
     sr = round((total_runs / balls * 100), 2) if balls > 0 else 0
     avg = round(total_runs / matches, 2) if matches > 0 else 0
 
-    # Season wise batting
     season_bat = bat_df.groupby("season")["runs_batter"].sum().reset_index()
-    season_bat_str = "\n".join([f"    {row['season']}: {row['runs_batter']} runs" for _, row in season_bat.iterrows()])
+    season_bat_str = "\n".join([
+        f"    {row['season']}: {row['runs_batter']} runs"
+        for _, row in season_bat.iterrows()
+    ])
 
-    # Bowling stats
+    # Team per season
+    team_per_season = bat_df.groupby("season")["batting_team"].agg(
+        lambda x: x.value_counts().index[0]
+    ).reset_index()
+    team_per_season_str = "\n".join([
+        f"    {row['season']}: {row['batting_team']}"
+        for _, row in team_per_season.iterrows()
+    ])
+
+    # Bowling
     bowl_df = df[df["bowler"] == player_name]
     w_df = bowl_df[bowl_df["wicket_kind"].notna() & (bowl_df["wicket_kind"] != "run out")]
     total_wickets = len(w_df)
@@ -107,12 +118,18 @@ def get_player_context(player_name):
     economy = round(runs_given / (balls_bowled / 6), 2) if balls_bowled > 0 else 0
     bowling_avg = round(runs_given / total_wickets, 2) if total_wickets > 0 else "N/A"
 
-    # Season wise bowling
     season_bowl = w_df.groupby("season").size().reset_index(name="wickets")
-    season_bowl_str = "\n".join([f"    {row['season']}: {row['wickets']} wickets" for _, row in season_bowl.iterrows()])
+    season_bowl_str = "\n".join([
+        f"    {row['season']}: {row['wickets']} wickets"
+        for _, row in season_bowl.iterrows()
+    ])
 
     return f"""
 PLAYER STATS FOR {player_name}:
+
+TEAM PER SEASON (use this to answer which team they played for):
+{team_per_season_str}
+
 BATTING:
 - Total Runs: {total_runs}
 - Matches: {matches}
@@ -131,6 +148,7 @@ Season wise wickets:
 {season_bowl_str}
 """
 
+# ── Base context ──
 base_context = f"""
 You are an expert IPL cricket analyst with access to ball by ball IPL data from 2008 to 2025.
 
@@ -155,9 +173,10 @@ MOST WINS PER SEASON:
 INSTRUCTIONS:
 - You have EXACT data. Always use it for precise answers.
 - Never say you dont have data if it is listed above.
+- When player stats are provided use them exactly — do not guess team names.
 - Understand informal or badly typed English.
 - Be conversational and fun, use cricket emojis.
-- For predictions, give fun analysis based on historical data.
+- For predictions give fun analysis based on historical data.
 - Keep answers concise but informative.
 """
 
@@ -195,8 +214,6 @@ if prompt:
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-
-            # Check if a player is mentioned
             player_found = find_player_in_query(prompt, all_players)
             if player_found:
                 player_context = get_player_context(player_found)
