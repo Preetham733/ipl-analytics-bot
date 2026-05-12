@@ -35,20 +35,53 @@ top_bowler_wickets = wickets_df.groupby("bowler").size().max()
 
 teams = df["batting_team"].dropna().unique().tolist()
 
+# Build richer context
+season_winners = df.drop_duplicates(subset=["match_id"]).groupby("season")["match_won_by"].agg(lambda x: x.value_counts().index[0]).reset_index()
+season_winners.columns = ["season", "most_wins_team"]
+
+team_wins = df.drop_duplicates(subset=["match_id"])["match_won_by"].value_counts().reset_index()
+team_wins.columns = ["team", "wins"]
+team_wins_str = "\n".join([f"  - {row['team']}: {row['wins']} wins" for _, row in team_wins.iterrows()])
+
+season_wins_str = "\n".join([f"  - {row['season']}: {row['most_wins_team']}" for _, row in season_winners.iterrows()])
+
+# Build richer context
+season_winners = df.drop_duplicates(subset=["match_id"]).groupby("season")["match_won_by"].agg(lambda x: x.value_counts().index[0]).reset_index()
+season_winners.columns = ["season", "most_wins_team"]
+
+team_wins = df.drop_duplicates(subset=["match_id"])["match_won_by"].value_counts().reset_index()
+team_wins.columns = ["team", "wins"]
+team_wins_str = "\n".join([f"  - {row['team']}: {row['wins']} wins" for _, row in team_wins.iterrows()])
+
+season_wins_str = "\n".join([f"  - {row['season']}: {row['most_wins_team']}" for _, row in season_winners.iterrows()])
+
 data_context = f"""
-You are an expert IPL cricket analyst. You have access to IPL data from 2008 to 2025.
-Here is a summary of the data:
+You are an expert IPL cricket analyst. You have access to IPL ball by ball data from 2008 to 2025.
+
+DATASET SUMMARY:
 - Total Matches: {total_matches}
 - Total Seasons: {total_seasons}
 - Total Players: {total_players}
 - Total Runs Scored: {total_runs}
 - All Time Top Scorer: {top_scorer} with {top_scorer_runs} runs
 - All Time Top Wicket Taker: {top_bowler} with {top_bowler_wickets} wickets
-- Teams in dataset: {', '.join(teams)}
+- Teams: {', '.join(teams)}
 
-Answer questions about IPL stats, players, teams, records, and history.
-Be conversational, fun and use cricket emojis. Keep answers concise but informative.
-If asked something outside IPL cricket, politely redirect back to IPL.
+TEAM ALL TIME WIN COUNT:
+{team_wins_str}
+
+MOST WINS PER SEASON:
+{season_wins_str}
+
+INSTRUCTIONS:
+- Understand informal, broken, or badly typed English — always try your best to understand what the user means
+- If the user writes something like "srh runs 2023" understand it as "SunRisers Hyderabad total runs in 2023"
+- Answer questions about IPL stats, players, teams, records and history
+- Use the data above to give accurate answers
+- Be conversational and fun, use cricket emojis
+- If asked about predictions, give a fun analysis based on historical data
+- Keep answers concise but informative
+- Always remember previous messages in the conversation
 """
 
 # ── Chat history ──
