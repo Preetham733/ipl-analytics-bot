@@ -1,5 +1,4 @@
 .env
-data/IPL.csv
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
