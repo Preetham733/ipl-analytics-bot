@@ -18,9 +18,10 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 
-# ── Load data for context ──
+# ── Load data ──
 df = load_data()
 
+# ── Build context ──
 total_matches = df["match_id"].nunique()
 total_seasons = df["season"].nunique()
 total_players = df["batter"].nunique()
@@ -35,28 +36,30 @@ top_bowler_wickets = wickets_df.groupby("bowler").size().max()
 
 teams = df["batting_team"].dropna().unique().tolist()
 
-# Build richer context
-season_winners = df.drop_duplicates(subset=["match_id"]).groupby("season")["match_won_by"].agg(lambda x: x.value_counts().index[0]).reset_index()
-season_winners.columns = ["season", "most_wins_team"]
-
+# Team all time wins
 team_wins = df.drop_duplicates(subset=["match_id"])["match_won_by"].value_counts().reset_index()
 team_wins.columns = ["team", "wins"]
 team_wins_str = "\n".join([f"  - {row['team']}: {row['wins']} wins" for _, row in team_wins.iterrows()])
 
-season_wins_str = "\n".join([f"  - {row['season']}: {row['most_wins_team']}" for _, row in season_winners.iterrows()])
+# Team runs per season
+team_season_runs = df.groupby(["season", "batting_team"])["runs_batter"].sum().reset_index()
+team_season_runs_str = "\n".join([
+    f"  - {row['batting_team']} in {row['season']}: {row['runs_batter']} runs"
+    for _, row in team_season_runs.iterrows()
+])
 
-# Build richer context
-season_winners = df.drop_duplicates(subset=["match_id"]).groupby("season")["match_won_by"].agg(lambda x: x.value_counts().index[0]).reset_index()
-season_winners.columns = ["season", "most_wins_team"]
-
-team_wins = df.drop_duplicates(subset=["match_id"])["match_won_by"].value_counts().reset_index()
-team_wins.columns = ["team", "wins"]
-team_wins_str = "\n".join([f"  - {row['team']}: {row['wins']} wins" for _, row in team_wins.iterrows()])
-
-season_wins_str = "\n".join([f"  - {row['season']}: {row['most_wins_team']}" for _, row in season_winners.iterrows()])
+# Season winners
+match_df = df.drop_duplicates(subset=["match_id"])
+season_winners = match_df.groupby("season")["match_won_by"].agg(
+    lambda x: x.value_counts().index[0]
+).reset_index()
+season_winners_str = "\n".join([
+    f"  - {row['season']}: {row['match_won_by']}"
+    for _, row in season_winners.iterrows()
+])
 
 data_context = f"""
-You are an expert IPL cricket analyst. You have access to IPL ball by ball data from 2008 to 2025.
+You are an expert IPL cricket analyst with access to ball by ball IPL data from 2008 to 2025.
 
 DATASET SUMMARY:
 - Total Matches: {total_matches}
@@ -70,18 +73,20 @@ DATASET SUMMARY:
 TEAM ALL TIME WIN COUNT:
 {team_wins_str}
 
+TEAM RUNS PER SEASON (use this for exact answers):
+{team_season_runs_str}
+
 MOST WINS PER SEASON:
-{season_wins_str}
+{season_winners_str}
 
 INSTRUCTIONS:
-- Understand informal, broken, or badly typed English — always try your best to understand what the user means
-- If the user writes something like "srh runs 2023" understand it as "SunRisers Hyderabad total runs in 2023"
-- Answer questions about IPL stats, players, teams, records and history
-- Use the data above to give accurate answers
-- Be conversational and fun, use cricket emojis
-- If asked about predictions, give a fun analysis based on historical data
-- Keep answers concise but informative
-- Always remember previous messages in the conversation
+- You have EXACT data above. Always use it to give precise answers.
+- When asked about a team runs in a season, look up TEAM RUNS PER SEASON and give the exact number.
+- Never say you dont have data if it is listed above.
+- Understand informal or badly typed English. "srh runs 2023" means "SunRisers Hyderabad runs in 2023".
+- Be conversational and fun, use cricket emojis.
+- For predictions, give fun analysis based on historical data.
+- Keep answers concise but informative.
 """
 
 # ── Chat history ──
@@ -125,7 +130,7 @@ if prompt:
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": data_context},
-                    *[{"role": m["role"], "content": m["content"]} 
+                    *[{"role": m["role"], "content": m["content"]}
                       for m in st.session_state.messages]
                 ]
             )
