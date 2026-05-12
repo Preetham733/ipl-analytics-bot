@@ -20,7 +20,7 @@ if not api_key:
 client = Groq(api_key=api_key)
 df = load_data()
 
-# ── Base context ──
+# ── Build base stats ──
 total_matches = df["match_id"].nunique()
 total_seasons = df["season"].nunique()
 total_players = df["batter"].nunique()
@@ -40,12 +40,6 @@ team_wins = df.drop_duplicates(subset=["match_id"])["match_won_by"].value_counts
 team_wins.columns = ["team", "wins"]
 team_wins_str = "\n".join([f"  - {row['team']}: {row['wins']} wins" for _, row in team_wins.iterrows()])
 
-team_season_runs = df.groupby(["season", "batting_team"])["runs_batter"].sum().reset_index()
-team_season_runs_str = "\n".join([
-    f"  - {row['batting_team']} in {row['season']}: {row['runs_batter']} runs"
-    for _, row in team_season_runs.iterrows()
-])
-
 match_df = df.drop_duplicates(subset=["match_id"])
 season_winners = match_df.groupby("season")["match_won_by"].agg(
     lambda x: x.value_counts().index[0]
@@ -58,20 +52,14 @@ season_winners_str = "\n".join([
 # ── Player finder ──
 def find_player_in_query(query, all_players):
     query_lower = query.lower()
-
-    # Exact match
     for player in all_players:
         if player.lower() in query_lower:
             return player
-
-    # Partial word match
     for player in all_players:
         parts = player.lower().split()
         for part in parts:
             if len(part) > 3 and part in query_lower:
                 return player
-
-    # Fuzzy match
     words = query_lower.split()
     for word in words:
         if len(word) > 4:
@@ -79,12 +67,10 @@ def find_player_in_query(query, all_players):
             if score > 75:
                 idx = [p.lower() for p in all_players].index(match)
                 return all_players[idx]
-
     return None
 
 # ── Player stats ──
 def get_player_context(player_name):
-    # Batting
     bat_df = df[df["batter"] == player_name]
     total_runs = bat_df["runs_batter"].sum()
     matches = bat_df["match_id"].nunique()
@@ -95,21 +81,19 @@ def get_player_context(player_name):
     avg = round(total_runs / matches, 2) if matches > 0 else 0
 
     season_bat = bat_df.groupby("season")["runs_batter"].sum().reset_index()
-    season_bat_str = "\n".join([
-        f"    {row['season']}: {row['runs_batter']} runs"
+    season_bat_str = " | ".join([
+        f"{row['season']}:{row['runs_batter']}"
         for _, row in season_bat.iterrows()
     ])
 
-    # Team per season
     team_per_season = bat_df.groupby("season")["batting_team"].agg(
         lambda x: x.value_counts().index[0]
     ).reset_index()
-    team_per_season_str = "\n".join([
-        f"    {row['season']}: {row['batting_team']}"
+    team_per_season_str = " | ".join([
+        f"{row['season']}:{row['batting_team']}"
         for _, row in team_per_season.iterrows()
     ])
 
-    # Bowling
     bowl_df = df[df["bowler"] == player_name]
     w_df = bowl_df[bowl_df["wicket_kind"].notna() & (bowl_df["wicket_kind"] != "run out")]
     total_wickets = len(w_df)
@@ -119,66 +103,48 @@ def get_player_context(player_name):
     bowling_avg = round(runs_given / total_wickets, 2) if total_wickets > 0 else "N/A"
 
     season_bowl = w_df.groupby("season").size().reset_index(name="wickets")
-    season_bowl_str = "\n".join([
-        f"    {row['season']}: {row['wickets']} wickets"
+    season_bowl_str = " | ".join([
+        f"{row['season']}:{row['wickets']}"
         for _, row in season_bowl.iterrows()
     ])
 
     return f"""
-PLAYER STATS FOR {player_name}:
-
-TEAM PER SEASON (use this to answer which team they played for):
-{team_per_season_str}
-
-BATTING:
-- Total Runs: {total_runs}
-- Matches: {matches}
-- Average: {avg}
-- Strike Rate: {sr}
-- Fours: {fours}
-- Sixes: {sixes}
-Season wise runs:
-{season_bat_str}
-
-BOWLING:
-- Total Wickets: {total_wickets}
-- Economy: {economy}
-- Bowling Average: {bowling_avg}
-Season wise wickets:
-{season_bowl_str}
+PLAYER: {player_name}
+TEAMS BY SEASON: {team_per_season_str}
+BATTING: {total_runs} runs | {matches} matches | Avg:{avg} | SR:{sr} | 4s:{fours} | 6s:{sixes}
+RUNS BY SEASON: {season_bat_str}
+BOWLING: {total_wickets} wickets | Economy:{economy} | BowlAvg:{bowling_avg}
+WICKETS BY SEASON: {season_bowl_str}
 """
 
 # ── Base context ──
 base_context = f"""
-You are an expert IPL cricket analyst with access to ball by ball IPL data from 2008 to 2025.
+You are an expert IPL cricket analyst with access to IPL data from 2008 to 2025.
 
-DATASET SUMMARY:
+SUMMARY:
 - Total Matches: {total_matches}
 - Total Seasons: {total_seasons}
 - Total Players: {total_players}
-- Total Runs Scored: {total_runs}
-- All Time Top Scorer: {top_scorer} with {top_scorer_runs} runs
-- All Time Top Wicket Taker: {top_bowler} with {top_bowler_wickets} wickets
+- Top Scorer: {top_scorer} with {top_scorer_runs} runs
+- Top Wicket Taker: {top_bowler} with {top_bowler_wickets} wickets
 - Teams: {', '.join(teams)}
 
-TEAM ALL TIME WIN COUNT:
+TEAM WIN COUNT:
 {team_wins_str}
 
-
-MOST WINS PER SEASON:
+IPL WINNERS BY SEASON:
 {season_winners_str}
 
-INSTRUCTIONS:
-- You have EXACT data. Always use it for precise answers.
-- Never say you dont have data if it is listed above.
-- When player stats are provided use them exactly — do not guess team names.
+RULES:
+- Use exact data provided. Never guess or make up stats.
+- When player data is provided use it precisely for team names and stats.
 - Understand informal or badly typed English.
-- Be conversational and fun, use cricket emojis.
-- For predictions give fun analysis based on historical data.
-- Keep answers concise but informative.
+- Be fun and use cricket emojis.
+- For predictions give analysis based on historical data.
+- Keep answers short and precise.
 """
 
-# ── Chat history ──
+# ── Chat ──
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -190,13 +156,13 @@ if len(st.session_state.messages) == 0:
     st.markdown("### 💡 Try asking:")
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("🏏 Who has scored the most runs?"):
+        if st.button("🏏 Most runs scorer?"):
             st.session_state.starter = "Who has scored the most runs in IPL history?"
     with col2:
-        if st.button("🎯 Best bowler in IPL?"):
+        if st.button("🎯 Best bowler?"):
             st.session_state.starter = "Who is the best bowler in IPL history?"
     with col3:
-        if st.button("🏆 Most successful team?"):
+        if st.button("🏆 Most titles?"):
             st.session_state.starter = "Which team has won the most IPL titles?"
 
 prompt = st.chat_input("Ask anything about IPL...")
@@ -219,16 +185,16 @@ if prompt:
             else:
                 full_context = base_context
 
-            # Only keep last 6 messages to avoid rate limits
             recent_messages = st.session_state.messages[-6:]
 
             response = client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": full_context},
                     *[{"role": m["role"], "content": m["content"]}
                       for m in recent_messages]
-                ]
+                ],
+                max_tokens=500
             )
             answer = response.choices[0].message.content
             st.markdown(answer)
