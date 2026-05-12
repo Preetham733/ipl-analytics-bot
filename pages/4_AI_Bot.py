@@ -219,12 +219,15 @@ if prompt:
             else:
                 full_context = base_context
 
+            # Only keep last 6 messages to avoid rate limits
+            recent_messages = st.session_state.messages[-6:]
+
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama3-8b-8192",
                 messages=[
                     {"role": "system", "content": full_context},
                     *[{"role": m["role"], "content": m["content"]}
-                      for m in st.session_state.messages]
+                      for m in recent_messages]
                 ]
             )
             answer = response.choices[0].message.content
