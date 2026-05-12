@@ -71,7 +71,7 @@ def find_player_in_query(query, all_players):
             if len(part) > 3 and part in query_lower:
                 return player
 
-    # Try fuzzy match on each word in query
+    # Try fuzzy match on each word in quer
     words = query_lower.split()
     for word in words:
         if len(word) > 4:
